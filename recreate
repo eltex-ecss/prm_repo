@@ -1,0 +1,45 @@
+#!/bin/bash -e 
+set -x
+
+readonly USER=${USER:-prm}
+readonly LOCKFILE=/var/lock/$USER
+
+lockfile-create --use-pid --retry 1 "$LOCKFILE" || exit 0
+function finish {
+	lockfile-remove "$LOCKFILE"
+}
+
+trap finish EXIT
+
+PRM=${PRM:-/usr/local/bin/prm}
+
+if [ $# != 4 ]; then
+    echo "Usage:"
+    echo "     $0 PASSPHRASE KEY_GPG REPO_DIR"
+	exit 1
+fi
+
+# For example ~/.gnupg/passphrase
+readonly PASSPHRASE="$1"
+# Key number for gpg sign
+readonly KEY="$2"
+# REPO_DIR=/var/www/repos/apt
+readonly REPO_DIR="$3"
+readonly SEC="$4"
+readonly INCOM_DIR=$REPO_DIR/incoming
+readonly REJ_DIR=$INCOM_DIR/rejects
+readonly DELETED=$REPO_DIR/deleted
+readonly REPO_DISTS=$REPO_DIR/dists
+
+SECTIONS=$(printf '%s\n' "${SECTIONS[@]}" | sort -u)
+
+for REP in unstable testing stable; do
+    TMP=$(mktemp -d)
+
+    REL_FILE=$REPO_DIR/dists/$REP/Release
+    rm -f "$REL_FILE.gpg"
+    $PRM --type deb --gpg_sign_algorithm 'SHA512' -p "$REPO_DIR" -r "$REP" -a amd64,i386 -c "$SEC" -d "$TMP" || true
+    gpg -u "$KEY" --passphrase-fd 0 --no-tty --yes --detach-sign \
+		--output "$REL_FILE.gpg"  "$REL_FILE" < "$PASSPHRASE"
+    rm -fr "$TMP"
+done

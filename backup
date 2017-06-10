@@ -1,0 +1,52 @@
+#!/bin/bash
+set -x
+set -e
+
+if [ $# != 3 ]; then
+    echo "Usage:"
+    echo "     $0 PASSPHRASE KEY_GPG REPO_DIR"
+    exit 1
+fi
+
+# For example ~/.gnupg/passphrase
+readonly PASSPHRASE="$1"
+# Key number for gpg sign
+readonly KEY="$2"
+# REPO_DIR=/var/www/repos/apt
+readonly REPO_DIR="$3"
+readonly REPO_DISTS=$REPO_DIR/dists
+
+rsync -aAXv "$REPO_DIR" /home/dana/backup/
+
+set +x
+for REP in $REPO_DISTS/*; do
+    if [ -d "$REP" ]; then
+        for SEC in $REP/*; do
+            if [ -d "$SEC" ]; then
+                for ARCH in $SEC/*; do
+                    if [ -d "$ARCH" ]; then
+                        pushd "$ARCH"
+                        for DEB in $(find . -maxdepth 1 -name "*.deb" | grep -oE "^\./([[:alnum:]\.\-])*_" | sort -u); do
+                            for DEL_DEB in $(find . -maxdepth 1 -name "*.deb" | grep -F "$DEB" | sort -V -u -t. | head -n -7); do
+                                echo "Try move $DEL_DEB"
+                                if [ -f "$DEL_DEB" ]; then
+                                    rm -f "$DEL_DEB"
+                                else
+                                    echo "delete error $DEL_DEB"
+                                fi
+                            done
+                        done
+                        popd
+                    fi
+                done
+            fi
+        done
+    fi	
+done
+set -x
+
+/home/dana/e.sh "$1" "$2" "$3" main
+/home/dana/e.sh "$1" "$2" "$3" xenial
+/home/dana/e.sh "$1" "$2" "$3" trusty
+
+rm /home/dana/backup/apt/backup
